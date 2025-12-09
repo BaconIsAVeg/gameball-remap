@@ -4,8 +4,7 @@
 #include <libevdev/libevdev.h>
 
 // Platform-specific default device paths
-// You can override this by changing the path below or passing device as
-// argument
+// You can override this by changing the path below
 #ifdef __linux__
 #define DEFAULT_DEVICE "/dev/input/event5"
 #elif defined(__FreeBSD__)
