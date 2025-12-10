@@ -7,6 +7,33 @@
 
 #include "config.h"
 
+// Helper function to determine event type from event code
+unsigned int get_event_type(unsigned int code) {
+  // Check if it's a button (BTN_* or KEY_*)
+  if (code >= BTN_MISC && code < KEY_MAX) {
+    return EV_KEY;
+  }
+  // Check if it's a relative axis (REL_*)
+  if (code < REL_MAX) {
+    return EV_REL;
+  }
+  return 0; // Unknown type
+}
+
+// Helper function to check if direction matches
+int direction_matches(int required_direction, int actual_value) {
+  if (required_direction == 0) { // ANY (defined as 0 in config.h)
+    return 1;                    // Match any value
+  }
+  if (required_direction > 0 && actual_value > 0) {
+    return 1; // Positive/UP/RIGHT
+  }
+  if (required_direction < 0 && actual_value < 0) {
+    return 1; // Negative/DOWN/LEFT
+  }
+  return 0;
+}
+
 int main() {
   struct libevdev *dev;
   struct libevdev_uinput *uidev;
@@ -62,32 +89,101 @@ int main() {
   printf("Virtual device: %s (%s)\n", libevdev_uinput_get_devnode(uidev),
          libevdev_get_name(dev));
 
-  if (NUM_BUTTON_REMAPS > 0) {
-    printf("Button remappings (%zu total):\n", NUM_BUTTON_REMAPS);
-    for (i = 0; i < NUM_BUTTON_REMAPS; i++) {
-      printf("  %s -> %s\n",
-             libevdev_event_code_get_name(EV_KEY, button_remaps[i].from),
-             libevdev_event_code_get_name(EV_KEY, button_remaps[i].to));
+  if (NUM_EVENT_REMAPS > 0) {
+    printf("Event remappings (%zu total):\n", NUM_EVENT_REMAPS);
+    for (i = 0; i < NUM_EVENT_REMAPS; i++) {
+      unsigned int from_type = get_event_type(event_remaps[i].from_code);
+      unsigned int to_type = get_event_type(event_remaps[i].to_code);
+      const char *direction = "";
+      if (event_remaps[i].from_direction > 0) {
+        direction = " (UP/RIGHT)";
+      } else if (event_remaps[i].from_direction < 0) {
+        direction = " (DOWN/LEFT)";
+      }
+      printf("  %s%s -> %s\n",
+             libevdev_event_code_get_name(from_type, event_remaps[i].from_code),
+             direction,
+             libevdev_event_code_get_name(to_type, event_remaps[i].to_code));
     }
   }
 
   // Event loop
+  // Track which regular scroll events were remapped (to suppress high-res
+  // variants)
+  int remapped_wheel = 0;
+  int remapped_hwheel = 0;
+
   while (1) {
     rc = libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev);
 
     if (rc == 0) {
-      // Check if this is a key event that needs button remapping
-      if (ev.type == EV_KEY) {
-        for (i = 0; i < NUM_BUTTON_REMAPS; i++) {
-          if (ev.code == button_remaps[i].from) {
-            ev.code = button_remaps[i].to;
+      int event_handled = 0;
+
+      // Reset tracking on SYN_REPORT (marks end of event batch)
+      if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
+        remapped_wheel = 0;
+        remapped_hwheel = 0;
+        libevdev_uinput_write_event(uidev, ev.type, ev.code, ev.value);
+        continue;
+      }
+
+      // Check all event remappings
+      for (i = 0; i < NUM_EVENT_REMAPS; i++) {
+        // Check if event code matches
+        if (ev.code == event_remaps[i].from_code) {
+          // Check if direction matches
+          if (direction_matches(event_remaps[i].from_direction, ev.value)) {
+            unsigned int from_type = get_event_type(event_remaps[i].from_code);
+            unsigned int to_type = get_event_type(event_remaps[i].to_code);
+
+            // Handle REL -> KEY conversion (scroll to button)
+            if (from_type == EV_REL && to_type == EV_KEY) {
+              // Track which scroll events we've remapped
+              if (ev.code == REL_WHEEL) {
+                remapped_wheel = 1;
+              } else if (ev.code == REL_HWHEEL) {
+                remapped_hwheel = 1;
+              }
+
+              // Generate button press
+              libevdev_uinput_write_event(uidev, EV_KEY,
+                                          event_remaps[i].to_code, 1);
+              libevdev_uinput_write_event(uidev, EV_SYN, SYN_REPORT, 0);
+              // Generate button release
+              libevdev_uinput_write_event(uidev, EV_KEY,
+                                          event_remaps[i].to_code, 0);
+              libevdev_uinput_write_event(uidev, EV_SYN, SYN_REPORT, 0);
+            }
+            // Handle KEY -> KEY conversion (button to button)
+            else if (from_type == EV_KEY && to_type == EV_KEY) {
+              libevdev_uinput_write_event(uidev, EV_KEY,
+                                          event_remaps[i].to_code, ev.value);
+            }
+            // Handle other conversions (pass through with new code)
+            else {
+              libevdev_uinput_write_event(uidev, to_type,
+                                          event_remaps[i].to_code, ev.value);
+            }
+
+            event_handled = 1;
             break;
           }
         }
       }
 
-      // Write the (possibly modified) event to virtual device
-      libevdev_uinput_write_event(uidev, ev.type, ev.code, ev.value);
+      // Suppress high-res variants if we remapped the regular scroll event
+      if (!event_handled) {
+        if ((ev.code == REL_WHEEL_HI_RES && remapped_wheel) ||
+            (ev.code == REL_HWHEEL_HI_RES && remapped_hwheel)) {
+          // Suppress this event (don't pass it through)
+          event_handled = 1;
+        }
+      }
+
+      // If event wasn't remapped or suppressed, pass it through unchanged
+      if (!event_handled) {
+        libevdev_uinput_write_event(uidev, ev.type, ev.code, ev.value);
+      }
     }
   }
 
