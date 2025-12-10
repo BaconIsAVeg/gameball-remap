@@ -3,13 +3,10 @@
 
 #include <libevdev/libevdev.h>
 
-// Platform-specific default device paths
-// You can override this by changing the path below
-#ifdef __linux__
+// Default device path
+// Change this to match your mouse device (find it with evtest or check
+// /dev/input/)
 #define DEFAULT_DEVICE "/dev/input/event5"
-#elif defined(__FreeBSD__)
-#define DEFAULT_DEVICE "/dev/input/event0"
-#endif
 
 // Virtual device name (shows up in /proc/bus/input/devices)
 #define VIRTUAL_DEVICE_NAME "Remapped Gameball Mouse"

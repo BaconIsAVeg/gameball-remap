@@ -4,8 +4,6 @@ For years I've been using a [Gameball](https://www.gamingtrackball.com/products/
 
 I ran [Input Remapper](https://github.com/sezanzeb/input-remapper) to remap those buttons, however a GTK app on top of Python bindings wrapping libevdev was a little heavy for my needs, and I'd occasionally see it eating over a GiB of memory, plus occasionally dealing with Python dependency conflicts.
 
-It also didn't work on FreeBSD, and I'd like to give that a spin again.
-
 So, here we go. A simple C program to map mouse buttons. It doesn't handle remapping the scroll wheel, but I can live without that.
 
 ## What it does
@@ -16,8 +14,6 @@ This creates a virtual input device that mirrors your mouse, but with button rem
 
 You'll need `libevdev` installed:
 
-**Linux:**
-
 ```bash
 # Debian/Ubuntu
 sudo apt install libevdev-dev
@@ -27,12 +23,6 @@ sudo pacman -S libevdev
 
 # Fedora
 sudo dnf install libevdev-devel
-```
-
-**FreeBSD:**
-
-```bash
-pkg install libevdev
 ```
 
 Then build it:
@@ -73,23 +63,17 @@ After building, run it with:
 sudo ./gameball-remap
 ```
 
-Or if you don't want to use `sudo` every time, add yourself to the `input` group on Linux:
+Or if you don't want to use `sudo` every time, add yourself to the `input` group:
 
 ```bash
 sudo usermod -aG input $USER
 ```
 
-Then log out and back in. On FreeBSD you'll need to load the evdev module first:
-
-```bash
-kldload evdev
-```
-
-You'll see output showing your remappings when it starts up. Leave it running, and your buttons will be remapped. Kill it with Ctrl+C when you're done. I start mine as a systemd user service in `graphical-session.target.wants`.
+Then log out and back in. You'll see output showing your remappings when it starts up. Leave it running, and your buttons will be remapped. Kill it with Ctrl+C when you're done. I start mine as a systemd user service in `graphical-session.target.wants`.
 
 ## Why not just use Input Remapper?
 
-Input Remapper is great if you need all the features, but I didn't. This is under 100 lines of C, compiles to a ~20KB binary, uses minimal memory, works on FreeBSD, and does exactly what I need. That's good enough for me.
+Input Remapper is great if you need all the features, but I didn't. This is under 100 lines of C, compiles to a ~20KB binary, uses minimal memory, and does exactly what I need. That's good enough for me.
 
 ## License
 
